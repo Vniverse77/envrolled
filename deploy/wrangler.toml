@@ -1,0 +1,8 @@
+# Example only. Copy next to cloudflare-worker.js, then: npx wrangler deploy
+name = "envrolled-trap"
+main = "cloudflare-worker.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+REDIRECT_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"   # change me
+# NOTIFY_URL contains a secret: set it with `npx wrangler secret put NOTIFY_URL`

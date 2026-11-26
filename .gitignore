@@ -1,0 +1,7 @@
+node_modules/
+.envrolled.json
+*.log
+hits.jsonl
+.env.production.bak
+.dev.vars
+notes/

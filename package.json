@@ -1,0 +1,45 @@
+{
+  "name": "envrolled",
+  "version": "0.1.0",
+  "description": "Plant a decoy .env that rickrolls whoever uses it. A zero-dependency honeytoken trap for leaked env files.",
+  "type": "module",
+  "bin": {
+    "envrolled": "bin/envrolled.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "deploy",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/",
+    "check": "node --check deploy/cloudflare-worker.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "honeytoken",
+    "canary",
+    "decoy",
+    "env",
+    "dotenv",
+    "secrets",
+    "leak",
+    "rickroll",
+    "security",
+    "cli"
+  ],
+  "author": "Vniverse77",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vniverse77/envrolled.git"
+  },
+  "homepage": "https://github.com/Vniverse77/envrolled#readme",
+  "bugs": {
+    "url": "https://github.com/Vniverse77/envrolled/issues"
+  }
+}
