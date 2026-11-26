@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveConfig } from '../src/config.js';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { resolveConfig, loadConfigFile } from '../src/config.js';
 import { validateRedirect, DEFAULT_REDIRECT } from '../src/redirect.js';
 
 test('redirect validation', () => {
@@ -46,4 +49,18 @@ test('invalid redirect from any source is rejected', () => {
 test('booleans from env', () => {
   assert.equal(resolveConfig({ env: { ENVROLLED_TRUST_PROXY: 'true' } }).values.trustProxy, true);
   assert.equal(resolveConfig({ env: { ENVROLLED_STATS: '0' } }).values.stats, false);
+});
+
+test('config file: null is {}, array and scalars give a clear error', () => {
+  const d = mkdtempSync(join(tmpdir(), 'envr-'));
+  const f = (txt) => { const p = join(d, 'c.json'); writeFileSync(p, txt); return p; };
+  assert.deepEqual(loadConfigFile(f('null')), {});
+  assert.throws(() => loadConfigFile(f('[1]')), /must be a JSON object/);
+  assert.throws(() => loadConfigFile(f('"x"')), /must be a JSON object/);
+  assert.throws(() => loadConfigFile(f('{bad')), /Cannot parse/);
+});
+
+test('bad notify gives a notify-specific message', () => {
+  assert.throws(() => resolveConfig({ flags: { notify: 'nope' } }), /Invalid notify URL/);
+  assert.throws(() => resolveConfig({ flags: { redirect: 'nope' } }), /Invalid redirect URL/);
 });

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { parseArgs } from 'node:util';
 import { readFileSync } from 'node:fs';
 import { runInit, DEFAULT_OUT } from '../src/init.js';
@@ -83,6 +84,14 @@ function main() {
       return;
     }
     const { server } = createTrap({ ...cfg, onError: (e) => console.error('envrolled:', e.message) });
+    server.on('error', (e) => {
+      const msg = e.code === 'EADDRINUSE' ? `port ${cfg.port} is already in use`
+        : e.code === 'EADDRNOTAVAIL' || e.code === 'ENOTFOUND' ? `cannot listen on host "${cfg.host}" (${e.code})`
+        : e.code === 'EACCES' ? `no permission to listen on port ${cfg.port}`
+        : e.message;
+      console.error(`envrolled: ${msg}`);
+      process.exit(1);
+    });
     server.listen(cfg.port, cfg.host, () => {
       const a = server.address();
       console.log(`envrolled trap listening on ${a.address}:${a.port}`);

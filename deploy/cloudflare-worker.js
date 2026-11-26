@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // envrolled trap as a Cloudflare Worker. Same behaviour as `envrolled serve`:
 // log (to Worker logs), optionally notify a webhook, redirect. Nothing else.
 //
@@ -45,6 +46,9 @@ export default {
     if (url.pathname === '/healthz') return new Response('ok\n');
 
     const redirect = safeUrl(env.REDIRECT_URL, DEFAULT_REDIRECT);
+    if (env.REDIRECT_URL && redirect === DEFAULT_REDIRECT && env.REDIRECT_URL !== DEFAULT_REDIRECT) {
+      console.error('envrolled: REDIRECT_URL is not a valid http(s) URL, falling back to the default video');
+    }
     const h = request.headers;
     const hit = {
       time: new Date().toISOString(),

@@ -18,7 +18,7 @@
     "check": "node --check deploy/cloudflare-worker.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18.3"
   },
   "keywords": [
     "honeytoken",

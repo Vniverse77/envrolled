@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Webhook notifications with a per-IP rate limit.
 // Payload is generic JSON that also satisfies Discord ("content"), Slack
 // ("text") and Telegram sendMessage ("text" + chat_id in the URL query).

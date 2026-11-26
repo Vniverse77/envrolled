@@ -52,3 +52,39 @@ test('token recognition', () => {
   assert.equal(findToken(null, `Bearer ${t}`), t);
   assert.equal(findToken('/t/nothing'), null);
 });
+
+test('second init keeps the first token list (state merge)', () => {
+  const d = dir();
+  const st = join(d, 's.json');
+  const a = runInit({ trap: 'https://t.example', out: join(d, 'a.bak'), stateFile: st });
+  const b = runInit({ trap: 'https://t.example', out: join(d, 'd2.bak'), stateFile: st });
+  const runs = JSON.parse(readFileSync(st, 'utf8')).runs;
+  assert.equal(runs.length, 2);
+  assert.deepEqual(runs[0].tokens, a.tokens);
+  assert.deepEqual(runs[1].tokens, b.tokens);
+});
+
+test('corrupt state file is not overwritten without --force', () => {
+  const d = dir();
+  const st = join(d, 's.json');
+  writeFileSync(st, '{oops');
+  assert.throws(() => runInit({ trap: 'https://t.example', out: join(d, 'a.bak'), stateFile: st }), /corrupt/);
+  assert.equal(readFileSync(st, 'utf8'), '{oops');
+  assert.ok(!existsSync(join(d, 'a.bak')));
+  runInit({ trap: 'https://t.example', out: join(d, 'a.bak'), stateFile: st, force: true });
+  assert.equal(JSON.parse(readFileSync(st, 'utf8')).runs.length, 1);
+});
+
+test('real-env guard is case-insensitive and covers .env.*', () => {
+  const d = dir();
+  for (const n of ['.ENV', '.Env.Local', '.env.prod', '.env.dev', '.env.example', '.env.local']) {
+    assert.throws(() => runInit({ trap: 'https://t.example', out: join(d, n), force: true, stateFile: join(d, 's') }), /real env file/, n);
+  }
+  for (const n of ['.env.production.bak', '.env.x.decoy', 'decoy.env', 'config.bak']) {
+    runInit({ trap: 'https://t.example', out: join(d, n), force: true, stateFile: join(d, 's') });
+  }
+});
+
+test('field-specific error for bad --trap', () => {
+  assert.throws(() => buildDecoy({ trap: 'notaurl' }), /Invalid --trap URL/);
+});

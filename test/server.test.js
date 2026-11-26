@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
+import { spawnSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { createTrap } from '../src/server.js';
 import { createNotifier } from '../src/notify.js';
 
+const bin = new URL('../bin/envrolled.js', import.meta.url).pathname;
 const REDIR = 'https://example.com/video';
 
 async function start(opts) {
@@ -61,10 +65,10 @@ test('X-Forwarded-For only honoured with trustProxy', async () => {
   for (const trust of [false, true]) {
     const log = join(mkdtempSync(join(tmpdir(), 'envr-')), 'h.jsonl');
     const s = await start({ log, trustProxy: trust });
-    await get(`${s.base}/`, { 'x-forwarded-for': '203.0.113.9, 10.0.0.1' });
+    await get(`${s.base}/`, { 'x-forwarded-for': '6.6.6.6, 203.0.113.9' });
     await settle();
     const ip = JSON.parse(readFileSync(log, 'utf8').trim()).ip;
-    assert.equal(ip === '203.0.113.9', trust);
+    assert.equal(ip === '203.0.113.9', trust); // rightmost entry, not the forgeable leftmost
     await s.close();
   }
 });
@@ -94,4 +98,39 @@ test('server triggers webhook through mock fetch', async () => {
   await settle();
   assert.equal(calls.length, 1); // same IP, rate limited
   await s.close();
+});
+
+test('trustProxy header priority: CF-Connecting-IP > X-Real-IP > rightmost XFF', async () => {
+  const log = join(mkdtempSync(join(tmpdir(), 'envr-')), 'h.jsonl');
+  const s = await start({ log, trustProxy: true });
+  await get(`${s.base}/`, { 'cf-connecting-ip': '1.1.1.1', 'x-real-ip': '2.2.2.2', 'x-forwarded-for': '3.3.3.3' });
+  await get(`${s.base}/`, { 'x-real-ip': '2.2.2.2', 'x-forwarded-for': '3.3.3.3' });
+  await settle();
+  const ips = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l).ip).sort();
+  assert.deepEqual(ips, ['1.1.1.1', '2.2.2.2']);
+  await s.close();
+});
+
+test('malformed log line does not stop /stats seeding', async () => {
+  const log = join(mkdtempSync(join(tmpdir(), 'envr-')), 'h.jsonl');
+  const day = new Date().toISOString();
+  writeFileSync(log, `{"time":"${day}"}\nnot json\n{"time":"${day}"}\n`);
+  const s = await start({ log, stats: true });
+  assert.equal((await (await get(`${s.base}/stats`)).json()).total, 2);
+  await s.close();
+});
+
+test('unwritable log path fails at startup with a clear message', () => {
+  assert.throws(() => createTrap({ redirect: REDIR, log: '/nonexistent-dir/x.jsonl' }), /Cannot write log file/);
+});
+
+test('CLI: port in use gives a clean message and exit code 1', async () => {
+  const blocker = createServer();
+  await new Promise((r) => blocker.listen(0, '127.0.0.1', r));
+  const port = blocker.address().port;
+  const r = spawnSync(process.execPath, [bin, 'serve', '--host', '127.0.0.1', '--port', String(port)], { encoding: 'utf8', timeout: 10000, cwd: tmpdir() });
+  blocker.close();
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /already in use/);
+  assert.doesNotMatch(r.stderr, /\n\s+at /);
 });

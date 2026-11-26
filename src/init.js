@@ -1,5 +1,6 @@
 // `envrolled init`: write a decoy env file whose values point at the trap.
-import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { makeToken } from './token.js';
 
@@ -28,14 +29,36 @@ const TOKEN_VARS = [
 ];
 
 /** Refuse anything that looks like a real env file. */
+// Case-insensitive (macOS/Windows are). Anything named .env or .env.* is refused,
+// except decoy-marked names ending in .bak or .decoy (e.g. .env.production.bak).
 export function isProtectedName(file) {
-  const b = basename(file);
-  return b === '.env' || b === '.env.local' || /^\.env\.(development|production|test|staging)(\.local)?$/.test(b);
+  const b = basename(file).toLowerCase();
+  if (!/^\.env(\..*)?$/.test(b)) return false;
+  return !(b.endsWith('.bak') || b.endsWith('.decoy'));
+}
+
+/** Read the state file. Returns {runs:[...]}; throws on corrupt JSON unless force. */
+function readState(stateFile, force) {
+  if (!existsSync(stateFile)) return { runs: [] };
+  try {
+    const s = JSON.parse(readFileSync(stateFile, 'utf8'));
+    if (s && Array.isArray(s.runs)) return { runs: s.runs };
+    if (s && typeof s === 'object' && !Array.isArray(s) && s.tokens) return { runs: [s] }; // 0.1.0 single-run format
+    throw new Error('unexpected structure');
+  } catch (e) {
+    if (force) return { runs: [] };
+    throw new Error(`"${stateFile}" is corrupt (${e.message}). Fix or delete it, or use --force to replace it.`);
+  }
 }
 
 /** Pure: build the decoy file text and the token map. */
 export function buildDecoy({ trap, count = 8 }) {
-  const base = new URL(trap);
+  let base;
+  try {
+    base = new URL(trap);
+  } catch {
+    throw new Error(`Invalid --trap URL (must be absolute http/https): ${trap}`);
+  }
   if (base.protocol !== 'http:' && base.protocol !== 'https:') {
     throw new Error('--trap must be an http(s) URL');
   }
@@ -66,12 +89,12 @@ export function runInit({ trap, out = DEFAULT_OUT, count, force = false, stateFi
     throw new Error(`"${out}" already exists. Use --force to overwrite it.`);
   }
   const { text, tokens } = buildDecoy({ trap, count });
+  const state = readState(stateFile, force); // before any write, so a corrupt file aborts cleanly
   if (dirname(out) !== '.') mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, text);
   // Informational only: the server recognises tokens by their shape, it does not need this file.
-  writeFileSync(
-    stateFile,
-    JSON.stringify({ created: new Date().toISOString(), trap, file: out, tokens }, null, 2) + '\n',
-  );
+  // Merge: keep the token lists of earlier runs.
+  state.runs.push({ created: new Date().toISOString(), trap, file: out, tokens });
+  writeFileSync(stateFile, JSON.stringify(state, null, 2) + '\n');
   return { out, stateFile, tokens };
 }

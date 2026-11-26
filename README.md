@@ -2,8 +2,6 @@
 
 **Plant a decoy `.env`. Whoever uses it gets rickrolled, and you get told.**
 
-[![npm](https://img.shields.io/npm/v/envrolled)](https://www.npmjs.com/package/envrolled) (shows once the package is published)
-
 Vibe-coded projects leak `.env` files to public GitHub all the time, and bots scrape them within minutes.
 `envrolled` generates a believable decoy env file whose values point at **your own trap server**. When a
 scraper or attacker tries those values, the trap logs the hit, optionally pings your webhook, and answers
@@ -65,6 +63,12 @@ characters, unique per variable, so the log tells you which one was used. The se
 that shape in the path, query, `Authorization` and `X-API-Key` headers. `.envrolled.json` is only a record for
 you; the server does not need it.
 
+`init` refuses any output name matching `.env` or `.env.*` (compared case-insensitively, so `.ENV`, `.env.prod`,
+`.env.example` and `.env.local` are all blocked), unless the name ends in `.bak` or `.decoy`
+(like the default `.env.production.bak`). Names that do not start with `.env` are fine.
+Running `init` again keeps earlier token lists: `.envrolled.json` holds a `runs` array, one entry per run. A corrupt
+state file is never overwritten without `--force`.
+
 Decoy values are deliberately **not** shaped like real vendor secrets (no AWS, OpenAI, GitHub or Stripe
 formats), so they cannot trigger push protection or vendor auto-revocation.
 
@@ -85,6 +89,7 @@ The config file is `./envrolled.config.json` (or `--config <file>`), keys use th
 
 Every request except `/healthz` (and `/stats` when enabled) is logged as one JSON line:
 `{"time","ip","method","path","userAgent","token"}`, then answered with `302`. `GET /healthz` returns `ok`.
+Requests that exceed Node's header size limit get a `431` from Node itself and are not logged.
 `GET /stats` returns `{"total":N,"today":N}`: counts only, no IPs, handy for a public "bots rickrolled" counter.
 Counters are rebuilt from the log file on start.
 
@@ -104,7 +109,8 @@ Webhook URLs are secrets: prefer the env var over a file you commit.
 
 - **VPS / homelab:** `npx envrolled serve --log /var/log/envrolled.jsonl` under systemd, pm2 or Docker, behind a domain.
 - **Behind a reverse proxy (nginx, Caddy, Cloudflare):** add `--trust-proxy` so the real client IP is logged.
-  Only do this when the proxy sets those headers itself; otherwise anyone can forge their IP in the log.
+  With it, the IP comes from `CF-Connecting-IP`, then `X-Real-IP`, then the rightmost `X-Forwarded-For` entry.
+  Your proxy must overwrite these headers rather than pass client-supplied ones through; otherwise anyone can forge their IP in the log.
 - **Cloudflare Worker (free, no server):** `deploy/cloudflare-worker.js` plus an example `deploy/wrangler.toml`.
   Set `REDIRECT_URL` (and optionally the `NOTIFY_URL` secret), then `npx wrangler deploy`. Hits go to Workers logs
   (`wrangler tail`). The Worker's rate limit is best-effort per isolate. It is not covered by the test suite;

@@ -1,4 +1,5 @@
 // Config precedence: flag > env var > config file > default.
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { readFileSync, existsSync } from 'node:fs';
 import { DEFAULT_REDIRECT, validateRedirect } from './redirect.js';
 
@@ -43,7 +44,10 @@ function coerce(key, v) {
 export function loadConfigFile(path) {
   if (!path || !existsSync(path)) return {};
   try {
-    return JSON.parse(readFileSync(path, 'utf8'));
+    const cfg = JSON.parse(readFileSync(path, 'utf8'));
+    if (cfg === null) return {};
+    if (typeof cfg !== 'object' || Array.isArray(cfg)) throw new Error('top level must be a JSON object');
+    return cfg;
   } catch (e) {
     throw new Error(`Cannot parse config file ${path}: ${e.message}`);
   }
@@ -75,7 +79,7 @@ export function resolveConfig({ flags = {}, env = {}, file = {} } = {}) {
     values[key] = source === 'default' ? DEFAULTS[key] : coerce(key, raw);
     sources[key] = source;
   }
-  values.redirect = validateRedirect(values.redirect);
-  if (values.notify) values.notify = validateRedirect(values.notify); // http(s) check
+  values.redirect = validateRedirect(values.redirect, 'redirect');
+  if (values.notify) values.notify = validateRedirect(values.notify, 'notify');
   return { values, sources };
 }

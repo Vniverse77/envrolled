@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Decoy tokens: "envr_" + 20 random hex chars. Deliberately NOT shaped like any
 // real vendor secret (no AKIA, sk-, ghp_, Stripe formats), so GitHub push
 // protection and vendor auto-revocation never get involved.
