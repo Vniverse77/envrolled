@@ -63,7 +63,7 @@ be used as an open redirect.
 and opaque token variables (`INTERNAL_API_TOKEN=envr_...`). Every token is `envr_` plus 20 random hex
 characters, unique per variable, so the log tells you which one was used. The server recognises tokens by
 that shape in the path, query, `Authorization` and `X-API-Key` headers. `.envrolled.json` is only a record for
-you (it is in the package's suggested `.gitignore`); the server does not need it.
+you; the server does not need it.
 
 Decoy values are deliberately **not** shaped like real vendor secrets (no AWS, OpenAI, GitHub or Stripe
 formats), so they cannot trigger push protection or vendor auto-revocation.
@@ -129,7 +129,7 @@ This idea is not new, and the existing tools are more capable:
 
 - [Thinkst Canarytokens](https://canarytokens.org): the original, many token types, hosted or self-hosted.
 - [GitGuardian Honeytoken](https://www.gitguardian.com): honeytokens integrated into a secrets-detection product.
-- [Deadfall](https://github.com/deadfall-sh/deadfall): honeytokens aimed at leaked credentials.
+- Deadfall: honeytokens aimed at leaked credentials.
 
 `envrolled` differs by being one command, meme-flavoured, self-hostable, with a user-configurable video
 and zero dependencies. If you need serious alerting, use the tools above.
