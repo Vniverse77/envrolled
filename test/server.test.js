@@ -24,15 +24,15 @@ const settle = () => new Promise((r) => setTimeout(r, 50));
 test('302 to configured URL, JSONL log, token recognised', async () => {
   const log = join(mkdtempSync(join(tmpdir(), 'envr-')), 'hits.jsonl');
   const s = await start({ log });
-  const res = await get(`${s.base}/t/envr_0123456789abcdef0123?a=1`, { 'user-agent': 'bot/1.0' });
+  const res = await get(`${s.base}/t/0123456789abcdef01234567?a=1`, { 'user-agent': 'bot/1.0' });
   assert.equal(res.status, 302);
   assert.equal(res.headers.get('location'), REDIR);
   await settle();
   const line = JSON.parse(readFileSync(log, 'utf8').trim());
   assert.equal(line.method, 'GET');
-  assert.equal(line.path, '/t/envr_0123456789abcdef0123?a=1');
+  assert.equal(line.path, '/t/0123456789abcdef01234567?a=1');
   assert.equal(line.userAgent, 'bot/1.0');
-  assert.equal(line.token, 'envr_0123456789abcdef0123');
+  assert.equal(line.token, '0123456789abcdef01234567');
   assert.ok(line.ip && line.time);
   await s.close();
 });
@@ -133,4 +133,25 @@ test('CLI: port in use gives a clean message and exit code 1', async () => {
   assert.equal(r.status, 1);
   assert.match(r.stderr, /already in use/);
   assert.doesNotMatch(r.stderr, /\n\s+at /);
+});
+
+test('unrecognised or odd paths still 302 to the configured URL', async () => {
+  const s = await start({});
+  for (const path of ['/', '/t/', '/t/x', '/random?token=nope']) {
+    const res = await get(`${s.base}${path}`);
+    assert.equal(res.status, 302, path);
+    assert.equal(res.headers.get('location'), REDIR);
+  }
+  await s.close();
+});
+
+test('header token and custom prefix recognised', async () => {
+  const log = join(mkdtempSync(join(tmpdir(), 'envr-')), 'h.jsonl');
+  const s = await start({ log, prefix: 'zz_' });
+  await get(`${s.base}/api`, { authorization: 'Bearer zz_0123456789abcdef01234567' });
+  await get(`${s.base}/api`, { 'x-api-key': '0123456789abcdef01234567' });
+  await settle();
+  const toks = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l).token);
+  assert.deepEqual(toks, ['zz_0123456789abcdef01234567', '0123456789abcdef01234567']);
+  await s.close();
 });

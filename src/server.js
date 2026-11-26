@@ -24,7 +24,7 @@ const today = (d = new Date()) => d.toISOString().slice(0, 10);
 
 export function createTrap(opts) {
   const redirect = validateRedirect(opts.redirect); // fixed at startup
-  const { log = null, trustProxy = false, stats = false, onError = () => {}, now = () => new Date() } = opts;
+  const { prefix = '', log = null, trustProxy = false, stats = false, onError = () => {}, now = () => new Date() } = opts;
   const notify = createNotifier({ url: opts.notify, fetchImpl: opts.fetchImpl, onError });
   const counts = { total: 0, byDay: {} };
 
@@ -67,7 +67,7 @@ export function createTrap(opts) {
       method: clean(req.method, 16),
       path: clean(req.url || '/'),
       userAgent: clean(h['user-agent']),
-      token: findToken(req.url, h.authorization, h['x-api-key'], h['x-auth-token']),
+      token: findToken({ url: req.url, headers: [h.authorization, h['x-api-key'], h['x-auth-token']], prefix }),
     };
     counts.total++;
     counts.byDay[hit.time.slice(0, 10)] = (counts.byDay[hit.time.slice(0, 10)] || 0) + 1;

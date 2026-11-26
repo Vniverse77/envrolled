@@ -13,14 +13,34 @@ test('init writes KEY=value lines pointing at the trap', () => {
   const out = join(d, '.env.production.bak');
   const r = runInit({ trap: 'https://trap.example.com/', out, stateFile: join(d, 's.json') });
   const text = readFileSync(out, 'utf8');
-  assert.match(text, /^API_BASE_URL=https:\/\/trap\.example\.com\/t\/envr_[0-9a-f]{20}$/m);
+  assert.match(text, /^API_BASE_URL=https:\/\/trap\.example\.com\/t\/[0-9a-f]{24}$/m);
   assert.equal(Object.keys(r.tokens).length, 8);
   assert.ok(existsSync(join(d, 's.json')));
 });
 
-test('decoys never look like vendor secrets', () => {
-  const { text } = buildDecoy({ trap: 'https://t.example', count: 14 });
-  assert.doesNotMatch(text, /AKIA|sk-|ghp_|sk_live|pk_live|xox[bp]-/);
+test('decoys never look like vendor secrets (50 files)', () => {
+  for (let i = 0; i < 50; i++) {
+    const { text, tokens } = buildDecoy({ trap: 'https://t.example', count: 14 });
+    assert.doesNotMatch(text, /AKIA|ASIA|sk-|ghp_|gho_|sk_live|pk_live|xox[a-z]-?|AIza|eyJ/);
+    for (const t of Object.values(tokens)) assert.match(t, /^[0-9a-f]{24}$/); // not 32/40 hex
+  }
+});
+
+test('default decoy output has no tool name and no honesty marker', () => {
+  const { text } = buildDecoy({ trap: 'https://trap.example.com' });
+  assert.doesNotMatch(text, /envr|decoy|honeytoken/i);
+  assert.match(text, /^# Production environment backup/);
+});
+
+test('--label adds a neutral comment', () => {
+  const { text } = buildDecoy({ trap: 'https://trap.example.com', label: true });
+  assert.match(text, /^# Decoy file: .*honeytokens/m);
+  assert.doesNotMatch(text, /envr/i);
+});
+
+test('--prefix is applied to tokens', () => {
+  const { tokens } = buildDecoy({ trap: 'https://t.example', prefix: 'zz_' });
+  for (const t of Object.values(tokens)) assert.match(t, /^zz_[0-9a-f]{24}$/);
 });
 
 test('init refuses to overwrite without --force', () => {
@@ -30,7 +50,7 @@ test('init refuses to overwrite without --force', () => {
   assert.throws(() => runInit({ trap: 'https://t.example', out, stateFile: join(d, 's') }), /already exists/);
   assert.equal(readFileSync(out, 'utf8'), 'keep me');
   runInit({ trap: 'https://t.example', out, force: true, stateFile: join(d, 's') });
-  assert.match(readFileSync(out, 'utf8'), /envr_/);
+  assert.match(readFileSync(out, 'utf8'), /[0-9a-f]{24}/);
 });
 
 test('init never touches real .env names', () => {
@@ -47,10 +67,17 @@ test('init requires --trap and an http(s) url', () => {
 
 test('token recognition', () => {
   const t = makeToken();
-  assert.match(t, /^envr_[0-9a-f]{20}$/);
-  assert.equal(findToken(`/t/${t}?x=1`), t);
-  assert.equal(findToken(null, `Bearer ${t}`), t);
-  assert.equal(findToken('/t/nothing'), null);
+  assert.match(t, /^[0-9a-f]{24}$/);
+  assert.equal(findToken({ url: `/t/${t}?x=1` }), t);
+  assert.equal(findToken({ url: '/other', headers: [null, `Bearer ${t}`] }), t);
+  assert.equal(findToken({ url: `/other?k=${t}` }), t);
+  assert.equal(findToken({ url: '/nothing', headers: ['abc'] }), null);
+  const p = makeToken('zz_');
+  assert.match(p, /^zz_[0-9a-f]{24}$/);
+  assert.equal(findToken({ url: '/x', headers: [`Bearer ${p}`], prefix: 'zz_' }), p);
+  assert.equal(findToken({ url: '/t/anything-opaque_1' }), 'anything-opaque_1');
+  assert.throws(() => makeToken('AKIA'), /vendor/);
+  assert.throws(() => makeToken('bad prefix'), /--prefix/);
 });
 
 test('second init keeps the first token list (state merge)', () => {

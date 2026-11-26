@@ -1,6 +1,7 @@
 // Config precedence: flag > env var > config file > default.
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { readFileSync, existsSync } from 'node:fs';
+import { validatePrefix } from './token.js';
 import { DEFAULT_REDIRECT, validateRedirect } from './redirect.js';
 
 export const CONFIG_FILE = 'envrolled.config.json';
@@ -13,6 +14,7 @@ const DEFAULTS = {
   log: null,
   trustProxy: false,
   stats: false,
+  prefix: '',
 };
 
 // key -> env var names, first one that is set wins
@@ -24,6 +26,7 @@ const ENV_NAMES = {
   log: ['ENVROLLED_LOG'],
   trustProxy: ['ENVROLLED_TRUST_PROXY'],
   stats: ['ENVROLLED_STATS'],
+  prefix: ['ENVROLLED_PREFIX'],
 };
 
 const BOOL = new Set(['trustProxy', 'stats']);
@@ -79,6 +82,7 @@ export function resolveConfig({ flags = {}, env = {}, file = {} } = {}) {
     values[key] = source === 'default' ? DEFAULTS[key] : coerce(key, raw);
     sources[key] = source;
   }
+  values.prefix = validatePrefix(values.prefix);
   values.redirect = validateRedirect(values.redirect, 'redirect');
   if (values.notify) values.notify = validateRedirect(values.notify, 'notify');
   return { values, sources };

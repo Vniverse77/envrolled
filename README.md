@@ -15,8 +15,8 @@ One command, self-hostable, no dependencies (Node built-ins only), GPL-3.0-or-la
  you                          the internet                       your trap
  ----                         ------------                       ---------
  envrolled init  --->  .env.production.bak  --(leaks / scraped)-->  bot or attacker
-                       API_BASE_URL=https://trap.you.dev/t/envr_..        |
-                                                                           | GET /t/envr_...
+                       API_BASE_URL=https://trap.you.dev/t/9f2c...        |
+                                                                           | GET /t/9f2c...
                                                                            v
                                          envrolled serve:  log JSONL + (webhook) + 302 --> video
 ```
@@ -52,25 +52,33 @@ be used as an open redirect.
 
 | Command | What it does |
 | --- | --- |
-| `envrolled init --trap <url> [--out f] [--count n] [--force]` | Writes the decoy file (default `.env.production.bak`) and `.envrolled.json` with the token list. Refuses to overwrite unless `--force`, and refuses real names like `.env`, `.env.local`, `.env.production`. |
+| `envrolled init --trap <url> [--out f] [--count n] [--prefix s] [--label] [--force]` | Writes the decoy file (default `.env.production.bak`) and `.envrolled.json` with the token list. Refuses to overwrite unless `--force`, and refuses real names like `.env`, `.env.local`, `.env.production`. |
 | `envrolled serve [options]` | Runs the trap server. |
 | `envrolled config` | Prints the resolved configuration and where each value came from. |
 | `envrolled --help`, `--version` | Help and version. |
 
 `init` creates URL variables (`API_BASE_URL=<trap>/t/<token>`, `ADMIN_PANEL_URL`, `PAYMENT_WEBHOOK_URL`, ...)
-and opaque token variables (`INTERNAL_API_TOKEN=envr_...`). Every token is `envr_` plus 20 random hex
-characters, unique per variable, so the log tells you which one was used. The server recognises tokens by
-that shape in the path, query, `Authorization` and `X-API-Key` headers. `.envrolled.json` is only a record for
-you; the server does not need it.
+and opaque token variables (`INTERNAL_API_TOKEN=<token>`). Every token is 24 random lowercase hex characters,
+unique per variable, so the log tells you which one was used. The generated file is meant to look like a
+real backup: it contains **no tool name and no "this is a decoy" comment**. The terminal output and
+`.envrolled.json` tell you which values are decoys. If you prefer an honest marker, `--label` adds a neutral
+comment line. `--prefix <str>` (1-16 chars) prepends a prefix to every token; pass the same `--prefix` to `serve`
+(or `ENVROLLED_PREFIX`, or `TOKEN_PREFIX` on the Worker) so it is recognised in headers and query strings.
+
+The server recognises tokens by shape: anything under `/t/<token>`, plus 24-hex strings (or prefix + 24 hex)
+in the query, `Authorization`, `X-API-Key` and `X-Auth-Token`. Recognition only fills the `token` field of the log.
+**Every request gets the same `302` to your redirect URL, recognised or not.**
+`.envrolled.json` is only a record for you (the server does not need it).
+
+Decoy values are deliberately not shaped like real vendor secrets (no AWS, OpenAI, GitHub, Stripe, Google or JWT
+formats, and never 32 or 40 hex characters), so they cannot trigger push protection or vendor auto-revocation.
+The URL values do contain your trap's hostname, so a reader can see where they point.
 
 `init` refuses any output name matching `.env` or `.env.*` (compared case-insensitively, so `.ENV`, `.env.prod`,
 `.env.example` and `.env.local` are all blocked), unless the name ends in `.bak` or `.decoy`
 (like the default `.env.production.bak`). Names that do not start with `.env` are fine.
 Running `init` again keeps earlier token lists: `.envrolled.json` holds a `runs` array, one entry per run. A corrupt
 state file is never overwritten without `--force`.
-
-Decoy values are deliberately **not** shaped like real vendor secrets (no AWS, OpenAI, GitHub or Stripe
-formats), so they cannot trigger push protection or vendor auto-revocation.
 
 ## Configuration
 
@@ -86,6 +94,7 @@ The config file is `./envrolled.config.json` (or `--config <file>`), keys use th
 | `log` / `--log` | `ENVROLLED_LOG` | none | JSONL hit log file |
 | `trustProxy` / `--trust-proxy` | `ENVROLLED_TRUST_PROXY` | `false` | Read client IP from `CF-Connecting-IP` / `X-Forwarded-For` |
 | `stats` / `--stats` | `ENVROLLED_STATS` | `false` | Enable `GET /stats` |
+| `prefix` / `--prefix` | `ENVROLLED_PREFIX` | none | Also recognise tokens with this prefix |
 
 Every request except `/healthz` (and `/stats` when enabled) is logged as one JSON line:
 `{"time","ip","method","path","userAgent","token"}`, then answered with `302`. `GET /healthz` returns `ok`.

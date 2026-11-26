@@ -11,7 +11,7 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 const HELP = `envrolled ${pkg.version} - plant a decoy .env, rickroll whoever uses it
 
 Usage:
-  envrolled init  --trap <url> [--out <file>] [--count <n>] [--force]
+  envrolled init  --trap <url> [--out <file>] [--count <n>] [--prefix <str>] [--label] [--force]
   envrolled serve [--port <n>] [--redirect <url>] [--notify <url>] [--log <file>]
                   [--trust-proxy] [--stats] [--host <addr>] [--config <file>]
   envrolled config [--config <file>]   show the resolved configuration
@@ -21,6 +21,8 @@ init options:
   --trap <url>      public URL of your trap server (required)
   --out <file>      decoy file to write (default ${DEFAULT_OUT}); never a real .env
   --count <n>       number of decoy variables (default 8)
+  --prefix <str>    optional token prefix (default none); pass the same to serve
+  --label           add a neutral "these are honeytokens" comment (off by default)
   --force           overwrite an existing decoy file
 
 serve options (precedence: flag > env var > ${CONFIG_FILE} > default):
@@ -31,6 +33,7 @@ serve options (precedence: flag > env var > ${CONFIG_FILE} > default):
   --log <file>      JSONL hit log (ENVROLLED_LOG)
   --trust-proxy     read CF-Connecting-IP / X-Forwarded-For (ENVROLLED_TRUST_PROXY)
   --stats           enable GET /stats, counts only (ENVROLLED_STATS)
+  --prefix <str>    also recognise tokens with this prefix (ENVROLLED_PREFIX)
   --config <file>   config file (default ./${CONFIG_FILE})
 `;
 
@@ -41,6 +44,8 @@ const options = {
   out: { type: 'string' },
   count: { type: 'string' },
   force: { type: 'boolean' },
+  prefix: { type: 'string' },
+  label: { type: 'boolean' },
   port: { type: 'string' },
   host: { type: 'string' },
   redirect: { type: 'string' },
@@ -52,7 +57,7 @@ const options = {
 };
 
 function flagsToConfig(v) {
-  const f = { port: v.port, host: v.host, redirect: v.redirect, notify: v.notify, log: v.log };
+  const f = { prefix: v.prefix, port: v.port, host: v.host, redirect: v.redirect, notify: v.notify, log: v.log };
   if (v['trust-proxy']) f.trustProxy = true;
   if (v.stats) f.stats = true;
   return f;
@@ -65,7 +70,7 @@ function main() {
   if (values.help || !cmd) return console.log(HELP);
 
   if (cmd === 'init') {
-    const r = runInit({ trap: values.trap, out: values.out, count: values.count, force: values.force });
+    const r = runInit({ trap: values.trap, out: values.out, count: values.count, prefix: values.prefix, label: values.label, force: values.force });
     console.log(`Wrote decoy env file: ${r.out}`);
     for (const [k, t] of Object.entries(r.tokens)) console.log(`  ${k.padEnd(24)} ${t}`);
     console.log(`Token list saved to ${r.stateFile} (informational; add it to .gitignore).`);

@@ -4,12 +4,26 @@
 //
 // Env vars (wrangler.toml [vars] or secrets):
 //   REDIRECT_URL  absolute http(s) URL to send visitors to (default: Rick Astley)
+//   TOKEN_PREFIX  optional, only if you used `init --prefix`
 //   NOTIFY_URL    optional webhook (Discord / Slack / generic JSON / Telegram sendMessage)
 //
 // The redirect target comes ONLY from REDIRECT_URL, never from the request.
 
 const DEFAULT_REDIRECT = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
-const TOKEN_RE = /envr_[0-9a-f]{20}/;
+const HEX24 = /(?<![0-9a-f])[0-9a-f]{24}(?![0-9a-f])/;
+const PATH_TOKEN = /^\/t\/([A-Za-z0-9_-]{8,80})/;
+// Same recognition as the CLI: /t/<token> path shape, optional TOKEN_PREFIX env var, plain 24 hex.
+function findToken(url, headers, prefix) {
+  const m = PATH_TOKEN.exec(url.pathname);
+  if (m) return m[1];
+  const custom = /^[A-Za-z0-9_-]{1,16}$/.test(prefix || '') ? new RegExp(`${prefix}[0-9a-f]{24}(?![0-9a-f])`) : null;
+  for (const s of [url.pathname + url.search, ...headers]) {
+    if (!s) continue;
+    const r = custom?.exec(s)?.[0] || HEX24.exec(s)?.[0];
+    if (r) return r;
+  }
+  return null;
+}
 const WINDOW_MS = 60_000;
 const lastNotified = new Map(); // best-effort per-isolate rate limit (ip -> ts)
 
@@ -56,8 +70,7 @@ export default {
       method: clean(request.method, 16),
       path: clean(url.pathname + url.search),
       userAgent: clean(h.get('user-agent')),
-      token: [url.pathname + url.search, h.get('authorization'), h.get('x-api-key')]
-        .map((s) => TOKEN_RE.exec(s || '')?.[0]).find(Boolean) || null,
+      token: findToken(url, [h.get('authorization'), h.get('x-api-key')], env.TOKEN_PREFIX),
     };
     console.log(JSON.stringify(hit)); // visible in `wrangler tail` / Workers Logs
     const hook = env.NOTIFY_URL && safeUrl(env.NOTIFY_URL, null);
