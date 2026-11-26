@@ -15,6 +15,7 @@ const DEFAULTS = {
   trustProxy: false,
   stats: false,
   statsPort: null,
+  statsHost: '127.0.0.1',
   prefix: '',
 };
 
@@ -28,6 +29,7 @@ const ENV_NAMES = {
   trustProxy: ['ENVROLLED_TRUST_PROXY'],
   stats: ['ENVROLLED_STATS'],
   statsPort: ['ENVROLLED_STATS_PORT'],
+  statsHost: ['ENVROLLED_STATS_HOST'],
   prefix: ['ENVROLLED_PREFIX'],
 };
 
@@ -84,7 +86,15 @@ export function resolveConfig({ flags = {}, env = {}, file = {} } = {}) {
     values[key] = source === 'default' ? DEFAULTS[key] : coerce(key, raw);
     sources[key] = source;
   }
-  if (values.statsPort) values.stats = true;
+  if (values.statsPort) {
+    if (values.port !== 0 && values.statsPort === values.port) {
+      throw new Error(`--stats-port (${values.statsPort}) must differ from --port; /stats must not share the trap port`);
+    }
+    if (!values.stats) {
+      values.stats = true;
+      sources.stats = `derived (statsPort from ${sources.statsPort})`;
+    }
+  }
   values.prefix = validatePrefix(values.prefix);
   values.redirect = validateRedirect(values.redirect, 'redirect');
   if (values.notify) values.notify = validateRedirect(values.notify, 'notify');

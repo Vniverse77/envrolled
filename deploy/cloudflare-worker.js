@@ -10,14 +10,21 @@
 // The redirect target comes ONLY from REDIRECT_URL, never from the request.
 
 const DEFAULT_REDIRECT = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
-const HEX24 = /(?<![0-9a-f])[0-9a-f]{24}(?![0-9a-f])/;
-// Same recognition as the CLI: a 24-hex (or TOKEN_PREFIX + 24-hex) value anywhere in the path, query or headers.
+// Same recognition as the CLI (src/token.js): three token shapes, optionally with TOKEN_PREFIX,
+// as a whole path segment or standing alone in the query / headers.
+const HEX = '[0-9a-f]{24}';
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+const B64 = '[A-Za-z0-9_-]{32}';
+const isB64 = (s) => /^[A-Za-z0-9_-]{32}$/.test(s) && /\d/.test(s) && /[a-z]/.test(s) && /[A-Z]/.test(s);
+const isBare = (s) => new RegExp(`^(?:${HEX}|${UUID})$`).test(s) || isB64(s);
 function findToken(url, headers, prefix) {
-  const custom = /^[A-Za-z0-9_-]{1,16}$/.test(prefix || '') ? new RegExp(`${prefix}[0-9a-f]{24}(?![0-9a-f])`) : null;
+  const p = /^[A-Za-z0-9_-]{1,16}$/.test(prefix || '') ? prefix : '';
+  const strip = (s) => (p && s.startsWith(p) ? s.slice(p.length) : s);
+  for (const seg of url.pathname.split('/')) if (isBare(strip(seg)) || isBare(seg)) return seg;
+  const re = new RegExp(`(?<![A-Za-z0-9_-])(?:${p})?(?:${UUID}|${B64}|${HEX})(?![A-Za-z0-9_-])`, 'g');
   for (const s of [url.pathname + url.search, ...headers]) {
     if (!s) continue;
-    const r = custom?.exec(s)?.[0] || HEX24.exec(s)?.[0];
-    if (r) return r;
+    for (const m of s.matchAll(re)) if (isBare(strip(m[0])) || isBare(m[0])) return m[0];
   }
   return null;
 }

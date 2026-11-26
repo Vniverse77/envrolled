@@ -64,3 +64,16 @@ test('bad notify gives a notify-specific message', () => {
   assert.throws(() => resolveConfig({ flags: { notify: 'nope' } }), /Invalid notify URL/);
   assert.throws(() => resolveConfig({ flags: { redirect: 'nope' } }), /Invalid redirect URL/);
 });
+
+test('statsPort: defaults to 127.0.0.1, derives stats with correct source, must differ from port', () => {
+  const r = resolveConfig({ env: { ENVROLLED_STATS_PORT: '9100' } });
+  assert.equal(r.values.statsPort, 9100);
+  assert.equal(r.values.statsHost, '127.0.0.1');
+  assert.equal(r.values.stats, true);
+  assert.match(r.sources.stats, /derived.*env:ENVROLLED_STATS_PORT/);
+  assert.equal(resolveConfig({ env: { ENVROLLED_STATS_PORT: '9100', ENVROLLED_STATS_HOST: '10.0.0.5' } }).values.statsHost, '10.0.0.5');
+  assert.equal(resolveConfig({ file: { statsPort: 9100, statsHost: '::1' } }).values.statsHost, '::1');
+  assert.throws(() => resolveConfig({ flags: { port: '8787', statsPort: '8787' } }), /must differ from --port/);
+  assert.throws(() => resolveConfig({ env: { PORT: '9000', ENVROLLED_STATS_PORT: '9000' } }), /must differ/);
+  assert.equal(resolveConfig({ flags: { stats: true } }).sources.stats, 'flag');
+});

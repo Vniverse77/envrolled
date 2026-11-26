@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Decoy tokens: 24 random lowercase hex chars, no tool name in them, so a leaked
-// file does not advertise the trap. 24 hex is neither 32 nor 40 (MD5/SHA-1 shaped)
-// and contains no uppercase/hyphen/underscore, so it cannot match vendor formats
-// (AKIA/ASIA, sk-, ghp_, xox*, sk_live, AIza, JWT). Optional --prefix is
-// validated below for the same reason.
-import { randomBytes } from 'node:crypto';
+// Decoy tokens come in three shapes, picked at random per variable, none of which
+// carries a tool name or matches a vendor secret format (AKIA/ASIA, sk-, ghp_,
+// xox*, sk_live, AIza, JWT/eyJ, ...):
+//   hex   24 lowercase hex chars
+//   b64   32 base64url chars (must mix digits, lower and upper case)
+//   uuid  UUID-v4-like (8-4-4-4-12 lowercase hex, version nibble 4)
+// Optional --prefix is validated for the same reason.
+import { randomBytes, randomUUID } from 'node:crypto';
 
-const HEX24 = /(?<![0-9a-f])[0-9a-f]{24}(?![0-9a-f])/;
+export const FORMS = ['hex', 'b64', 'uuid'];
+
+const HEX = '[0-9a-f]{24}';
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+const B64 = '[A-Za-z0-9_-]{32}';
 const VENDOR_PREFIX = /^(a[ks]ia|sk|ghp|gho|ghs|ghu|github|xox|aiza|eyj|pk|rk|whsec|npm|glpat|ya29|hf_|gsk_|shpat|dop_|sq0|key-)/i;
+// Substrings a generated b64 token must never contain (it is random text, so check anywhere).
+const VENDOR_ANYWHERE = /(sk[-_]|[pk]k[-_]|gh[pousr]_|akia|asia|aiza|xox|eyj|ya29|hf_|gsk_|shpat|dop_|sq0|key-|whsec|glpat|npm_)/i;
 
 export function validatePrefix(prefix) {
   if (prefix === undefined || prefix === null || prefix === '') return '';
@@ -17,29 +25,40 @@ export function validatePrefix(prefix) {
   return p;
 }
 
-export function makeToken(prefix = '') {
-  return validatePrefix(prefix) + randomBytes(12).toString('hex');
+/** A b64 token only counts if it mixes digit, lower and upper case (keeps noise like "zzzz..." out). */
+const isB64 = (s) => /^[A-Za-z0-9_-]{32}$/.test(s) && /\d/.test(s) && /[a-z]/.test(s) && /[A-Z]/.test(s);
+const isBare = (s) => new RegExp(`^(?:${HEX}|${UUID})$`).test(s) || isB64(s);
+
+function makeBare(form) {
+  if (form === 'hex') return randomBytes(12).toString('hex');
+  if (form === 'uuid') return randomUUID();
+  for (;;) {
+    const t = randomBytes(24).toString('base64url');
+    if (isB64(t) && !VENDOR_ANYWHERE.test(t)) return t;
+  }
+}
+
+export function makeToken(prefix = '', form = FORMS[randomBytes(1)[0] % FORMS.length]) {
+  if (!FORMS.includes(form)) throw new Error(`unknown token form: ${form}`);
+  return validatePrefix(prefix) + makeBare(form);
 }
 
 /**
- * Recognise a decoy token: a valid 24-hex (or prefix + 24-hex) value, either as a
- * whole path segment anywhere in the path, or inside the query / header values.
- * Noise such as /t/zzzzzzzz yields null. `url` is path + query.
+ * Recognise a decoy token (any of the three shapes, optionally with the configured
+ * prefix) as a whole path segment anywhere in the path, or standing alone in the query
+ * or a header value. Noise such as /t/zzzzzzzz yields null. `url` is path + query.
  */
 export function findToken({ url, headers = [], prefix = '' } = {}) {
   const p = prefix ? validatePrefix(prefix) : '';
-  const custom = p ? new RegExp(`${p}[0-9a-f]{24}(?![0-9a-f])`) : null;
-  const segOk = new RegExp(`^(?:${p ? p + '|' : ''})[0-9a-f]{24}$`);
+  const strip = (s) => (p && s.startsWith(p) ? s.slice(p.length) : s);
   const u = String(url || '');
   for (const seg of u.split('?')[0].split('/')) {
-    if (segOk.test(seg)) return seg;
+    if (isBare(strip(seg)) || isBare(seg)) return seg;
   }
+  const re = new RegExp(`(?<![A-Za-z0-9_-])(?:${p})?(?:${UUID}|${B64}|${HEX})(?![A-Za-z0-9_-])`, 'g');
   for (const s of [u, ...headers]) {
     if (typeof s !== 'string') continue;
-    const c = custom?.exec(s);
-    if (c) return c[0];
-    const h = HEX24.exec(s);
-    if (h) return h[0];
+    for (const m of s.matchAll(re)) if (isBare(strip(m[0])) || isBare(m[0])) return m[0];
   }
   return null;
 }

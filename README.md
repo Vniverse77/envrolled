@@ -58,14 +58,14 @@ be used as an open redirect.
 | `envrolled --help`, `--version` | Help and version. |
 
 `init` creates URL variables (for example `API_BASE_URL=https://<trap>/v1/<token>`; the path is picked at random per variable from a list such as `/api/v1`, `/admin/session`, `/hooks/payments`, `/internal/api`)
-and opaque token variables (`INTERNAL_API_TOKEN=<token>`). Variable names, their order, the URL paths and the header comment are randomised from larger pools on every run, and a few harmless lines (`NODE_ENV`, `PORT`, `LOG_LEVEL`, `APP_NAME`, ...) are mixed in, so there is no fixed shape to filter on. `--path /v1` forces one prefix for all URLs; `--count` sets how many decoy variables you get. There is never a `DATABASE_URL`, private key or vendor-format secret. Every token is 24 random lowercase hex characters,
-unique per variable, so the log tells you which one was used. The generated file is meant to look like a
+and opaque token variables (`INTERNAL_API_TOKEN=<token>`). Variable names, their order, the URL paths and the header comment are randomised from larger pools on every run, and a few harmless lines (`NODE_ENV`, `PORT`, `LOG_LEVEL`, `APP_NAME`, ...) are mixed in, so there is no constant path, header comment or variable name to filter on. Be honest about the limits: secret values come from a few known shapes (see below), and every URL points at your trap host, so a determined reader can still work out what the file is. `--path /v1` forces one prefix for all URLs; `--count` sets how many decoy variables you get. There is never a `DATABASE_URL`, private key or vendor-format secret. Every token is
+unique per variable, so the log tells you which one was used, and takes one of three shapes at random: 24 lowercase hex characters, 32 base64url characters (mixed case and digits), or a UUID-v4-like string. The generated file is meant to look like a
 real backup: it contains **no tool name and no "this is a decoy" comment**. The terminal output and
 the token record tell you which values are decoys. If you prefer an honest marker, `--label` adds a neutral
 comment line. `--prefix <str>` (1-16 chars) prepends a prefix to every token; pass the same `--prefix` to `serve`
 (or `ENVROLLED_PREFIX`, or `TOKEN_PREFIX` on the Worker) so it is recognised in headers and query strings.
 
-The server recognises tokens by shape: a 24-hex value (or prefix + 24 hex) anywhere in the path, plus the same in the query, `Authorization`, `X-API-Key` and `X-Auth-Token`. Recognition only fills the `token` field of the log.
+The server recognises tokens by shape: any of those three shapes (optionally with your prefix) as a whole path segment anywhere in the path, plus the same standing alone in the query, `Authorization`, `X-API-Key` and `X-Auth-Token`. Recognition only fills the `token` field of the log.
 **Every request gets the same `302` to your redirect URL, recognised or not.**
 
 **Token record.** `init` saves which token belongs to which variable (and full URLs) to
@@ -98,13 +98,14 @@ The config file is `./envrolled.config.json` (or `--config <file>`), keys use th
 | `log` / `--log` | `ENVROLLED_LOG` | none | JSONL hit log file |
 | `trustProxy` / `--trust-proxy` | `ENVROLLED_TRUST_PROXY` | `false` | Read client IP from `CF-Connecting-IP` / `X-Forwarded-For` |
 | `stats` / `--stats` | `ENVROLLED_STATS` | `false` | Enable `GET /stats` |
-| `statsPort` / `--stats-port` | `ENVROLLED_STATS_PORT` | none | Serve `/stats` on a separate port |
+| `statsPort` / `--stats-port` | `ENVROLLED_STATS_PORT` | none | Serve `/stats` on a separate port (must differ from `port`) |
+| `statsHost` / `--stats-host` | `ENVROLLED_STATS_HOST` | `127.0.0.1` | Address of the stats listener |
 | `prefix` / `--prefix` | `ENVROLLED_PREFIX` | none | Also recognise tokens with this prefix |
 
 Every request except `/healthz` (and `/stats` when enabled) is logged as one JSON line:
 `{"time","ip","method","path","userAgent","token"}`, then answered with `302`. `GET /healthz` returns `ok`.
 Requests that exceed Node's header size limit get a `431` from Node itself and are not logged.
-`GET /stats` returns `{"total":N,"today":N}`: counts only, no IPs. Because it lives on the same host as the trap, a visitor can discover it and learn it is a trap: **enable it only behind a separate admin host or port**. `--stats-port <n>` serves `/stats` on its own listener (same `--host`, so bind it to a private address) and disables it on the trap port.
+`GET /stats` returns `{"total":N,"today":N}`: counts only, no IPs. Because it lives on the same host as the trap, a visitor can discover it and learn it is a trap: **enable it only behind a separate admin host or port**. `--stats-port <n>` serves `/stats` on its own listener bound to `127.0.0.1` unless you set `--stats-host`, and disables it on the trap port. Reach it through an SSH tunnel or a private network; `--stats-port` may not equal `--port`.
 Counters are rebuilt from the log file on start.
 
 ### Hostname warning

@@ -2,7 +2,7 @@
 // `envrolled init`: write a decoy env file whose values point at the trap.
 // Layout (names, order, URL paths, header) is randomised per run so there is no
 // fixed shape for a scraper to skip.
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomInt } from 'node:crypto';
@@ -155,7 +155,15 @@ export function runInit({
   if (dirname(out) !== '.') mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, text);
   state.runs.push({ created: new Date().toISOString(), trap, file: out, tokens, urls });
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, JSON.stringify(state, null, 2) + '\n');
+  // The record lists tokens: keep it private (dir 0700, file 0600) whatever the umask.
+  const sdir = dirname(file);
+  const dirExisted = existsSync(sdir);
+  mkdirSync(sdir, { recursive: true, mode: 0o700 });
+  writeFileSync(file, JSON.stringify(state, null, 2) + '\n', { mode: 0o600 });
+  if (process.platform !== 'win32') {
+    // Only tighten a directory we created or the default location; never an arbitrary existing one (e.g. ".").
+    if (!dirExisted || !explicit) chmodSync(sdir, 0o700);
+    chmodSync(file, 0o600);
+  }
   return { out, stateFile: file, migratedFrom: source !== file ? source : null, tokens };
 }

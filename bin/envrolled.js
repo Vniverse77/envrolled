@@ -14,7 +14,7 @@ Usage:
   envrolled init  --trap <url> [--out <file>] [--count <n>] [--prefix <str>] [--path <prefix>]
                   [--label] [--state <file>] [--force]
   envrolled serve [--port <n>] [--redirect <url>] [--notify <url>] [--log <file>]
-                  [--trust-proxy] [--stats] [--stats-port <n>] [--host <addr>] [--config <file>]
+                  [--trust-proxy] [--stats] [--stats-port <n>] [--stats-host <a>] [--host <addr>] [--config <file>]
   envrolled config [--config <file>]   show the resolved configuration
   envrolled --help | --version
 
@@ -37,7 +37,8 @@ serve options (precedence: flag > env var > ${CONFIG_FILE} > default):
   --trust-proxy     read CF-Connecting-IP / X-Forwarded-For (ENVROLLED_TRUST_PROXY)
   --stats           enable GET /stats, counts only (ENVROLLED_STATS)
   --prefix <str>    also recognise tokens with this prefix (ENVROLLED_PREFIX)
-  --stats-port <n>  serve /stats on its own port instead (ENVROLLED_STATS_PORT); keep it private
+  --stats-port <n>  serve /stats on its own port instead (ENVROLLED_STATS_PORT), must differ from --port
+  --stats-host <a>  address for the stats listener (ENVROLLED_STATS_HOST, default 127.0.0.1)
   --config <file>   config file (default ./${CONFIG_FILE})
 `;
 
@@ -58,13 +59,14 @@ const options = {
   'trust-proxy': { type: 'boolean' },
   stats: { type: 'boolean' },
   'stats-port': { type: 'string' },
+  'stats-host': { type: 'string' },
   path: { type: 'string' },
   state: { type: 'string' },
   config: { type: 'string' },
 };
 
 function flagsToConfig(v) {
-  const f = { statsPort: v['stats-port'], prefix: v.prefix, port: v.port, host: v.host, redirect: v.redirect, notify: v.notify, log: v.log };
+  const f = { statsPort: v['stats-port'], statsHost: v['stats-host'], prefix: v.prefix, port: v.port, host: v.host, redirect: v.redirect, notify: v.notify, log: v.log };
   if (v['trust-proxy']) f.trustProxy = true;
   if (v.stats) f.stats = true;
   return f;
@@ -107,7 +109,7 @@ function main() {
     });
     if (statsServer) {
       statsServer.on('error', (e) => { console.error(`envrolled: stats port ${cfg.statsPort}: ${e.code || e.message}`); process.exit(1); });
-      statsServer.listen(cfg.statsPort, cfg.host, () => console.log(`stats on ${cfg.host}:${cfg.statsPort} (/stats)`));
+      statsServer.listen(cfg.statsPort, cfg.statsHost, () => console.log(`stats on ${cfg.statsHost}:${cfg.statsPort} (/stats)`));
     }
     server.listen(cfg.port, cfg.host, () => {
       const a = server.address();
