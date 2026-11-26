@@ -14,6 +14,7 @@ const DEFAULTS = {
   log: null,
   trustProxy: false,
   stats: false,
+  statsPort: null,
   prefix: '',
 };
 
@@ -26,13 +27,14 @@ const ENV_NAMES = {
   log: ['ENVROLLED_LOG'],
   trustProxy: ['ENVROLLED_TRUST_PROXY'],
   stats: ['ENVROLLED_STATS'],
+  statsPort: ['ENVROLLED_STATS_PORT'],
   prefix: ['ENVROLLED_PREFIX'],
 };
 
 const BOOL = new Set(['trustProxy', 'stats']);
 
 function coerce(key, v) {
-  if (key === 'port') {
+  if (key === 'port' || key === 'statsPort') {
     const n = Number(v);
     if (!Number.isInteger(n) || n < 0 || n > 65535) throw new Error(`Invalid port: ${v}`);
     return n;
@@ -82,6 +84,7 @@ export function resolveConfig({ flags = {}, env = {}, file = {} } = {}) {
     values[key] = source === 'default' ? DEFAULTS[key] : coerce(key, raw);
     sources[key] = source;
   }
+  if (values.statsPort) values.stats = true;
   values.prefix = validatePrefix(values.prefix);
   values.redirect = validateRedirect(values.redirect, 'redirect');
   if (values.notify) values.notify = validateRedirect(values.notify, 'notify');

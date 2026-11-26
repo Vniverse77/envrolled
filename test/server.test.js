@@ -137,7 +137,7 @@ test('CLI: port in use gives a clean message and exit code 1', async () => {
 
 test('unrecognised or odd paths still 302 to the configured URL', async () => {
   const s = await start({});
-  for (const path of ['/', '/t/', '/t/x', '/random?token=nope']) {
+  for (const path of ['/', '/t/', '/t/x', '/random?token=nope', '/admin/session/0123456789abcdef01234567']) {
     const res = await get(`${s.base}${path}`);
     assert.equal(res.status, 302, path);
     assert.equal(res.headers.get('location'), REDIR);
@@ -154,4 +154,30 @@ test('header token and custom prefix recognised', async () => {
   const toks = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l).token);
   assert.deepEqual(toks, ['zz_0123456789abcdef01234567', '0123456789abcdef01234567']);
   await s.close();
+});
+
+test('token anywhere in the path is logged; noise gives null; 302 has content-length 0', async () => {
+  const log = join(mkdtempSync(join(tmpdir(), 'envr-')), 'h.jsonl');
+  const s = await start({ log });
+  const r1 = await get(`${s.base}/hooks/payments/0123456789abcdef01234567`);
+  assert.equal(r1.headers.get('content-length'), '0');
+  await get(`${s.base}/t/zzzzzzzz`);
+  await settle();
+  const toks = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l).token);
+  assert.deepEqual(toks, ['0123456789abcdef01234567', null]);
+  await s.close();
+});
+
+test('stats-port serves /stats separately and not on the trap port', async () => {
+  const { server, statsServer } = createTrap({ redirect: REDIR, stats: true, statsPort: 1 });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  await new Promise((r) => statsServer.listen(0, '127.0.0.1', r));
+  const trap = `http://127.0.0.1:${server.address().port}`;
+  const adm = `http://127.0.0.1:${statsServer.address().port}`;
+  assert.equal((await get(`${trap}/stats`)).status, 302);
+  const body = await (await get(`${adm}/stats`)).json();
+  assert.equal(body.total, 1);
+  assert.equal((await get(`${adm}/other`)).status, 404);
+  await new Promise((r) => server.close(r));
+  await new Promise((r) => statsServer.close(r));
 });

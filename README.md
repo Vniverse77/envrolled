@@ -15,8 +15,8 @@ One command, self-hostable, no dependencies (Node built-ins only), GPL-3.0-or-la
  you                          the internet                       your trap
  ----                         ------------                       ---------
  envrolled init  --->  .env.production.bak  --(leaks / scraped)-->  bot or attacker
-                       API_BASE_URL=https://trap.you.dev/t/9f2c...        |
-                                                                           | GET /t/9f2c...
+                       API_BASE_URL=https://trap.you.dev/v1/9f2c...       |
+                                                                           | GET /v1/9f2c...
                                                                            v
                                          envrolled serve:  log JSONL + (webhook) + 302 --> video
 ```
@@ -52,23 +52,28 @@ be used as an open redirect.
 
 | Command | What it does |
 | --- | --- |
-| `envrolled init --trap <url> [--out f] [--count n] [--prefix s] [--label] [--force]` | Writes the decoy file (default `.env.production.bak`) and `.envrolled.json` with the token list. Refuses to overwrite unless `--force`, and refuses real names like `.env`, `.env.local`, `.env.production`. |
+| `envrolled init --trap <url> [--out f] [--count n] [--prefix s] [--path p] [--state f] [--label] [--force]` | Writes the decoy file (default `.env.production.bak`) and a token record (see below). Refuses to overwrite unless `--force`, and refuses real names like `.env`, `.env.local`, `.env.production`. |
 | `envrolled serve [options]` | Runs the trap server. |
 | `envrolled config` | Prints the resolved configuration and where each value came from. |
 | `envrolled --help`, `--version` | Help and version. |
 
-`init` creates URL variables (`API_BASE_URL=<trap>/t/<token>`, `ADMIN_PANEL_URL`, `PAYMENT_WEBHOOK_URL`, ...)
-and opaque token variables (`INTERNAL_API_TOKEN=<token>`). Every token is 24 random lowercase hex characters,
+`init` creates URL variables (for example `API_BASE_URL=https://<trap>/v1/<token>`; the path is picked at random per variable from a list such as `/api/v1`, `/admin/session`, `/hooks/payments`, `/internal/api`)
+and opaque token variables (`INTERNAL_API_TOKEN=<token>`). Variable names, their order, the URL paths and the header comment are randomised from larger pools on every run, and a few harmless lines (`NODE_ENV`, `PORT`, `LOG_LEVEL`, `APP_NAME`, ...) are mixed in, so there is no fixed shape to filter on. `--path /v1` forces one prefix for all URLs; `--count` sets how many decoy variables you get. There is never a `DATABASE_URL`, private key or vendor-format secret. Every token is 24 random lowercase hex characters,
 unique per variable, so the log tells you which one was used. The generated file is meant to look like a
 real backup: it contains **no tool name and no "this is a decoy" comment**. The terminal output and
-`.envrolled.json` tell you which values are decoys. If you prefer an honest marker, `--label` adds a neutral
+the token record tell you which values are decoys. If you prefer an honest marker, `--label` adds a neutral
 comment line. `--prefix <str>` (1-16 chars) prepends a prefix to every token; pass the same `--prefix` to `serve`
 (or `ENVROLLED_PREFIX`, or `TOKEN_PREFIX` on the Worker) so it is recognised in headers and query strings.
 
-The server recognises tokens by shape: anything under `/t/<token>`, plus 24-hex strings (or prefix + 24 hex)
-in the query, `Authorization`, `X-API-Key` and `X-Auth-Token`. Recognition only fills the `token` field of the log.
+The server recognises tokens by shape: a 24-hex value (or prefix + 24 hex) anywhere in the path, plus the same in the query, `Authorization`, `X-API-Key` and `X-Auth-Token`. Recognition only fills the `token` field of the log.
 **Every request gets the same `302` to your redirect URL, recognised or not.**
-`.envrolled.json` is only a record for you (the server does not need it).
+
+**Token record.** `init` saves which token belongs to which variable (and full URLs) to
+`$XDG_STATE_HOME/envrolled/state.json` (fallback `~/.local/state/envrolled/state.json`, or
+`%LOCALAPPDATA%\envrolled\state.json` on Windows), so it never sits next to the decoy file. Choose another
+location with `--state <file>`. Each run is appended; a corrupt file is never overwritten without `--force`.
+If a 0.1.0-style `./.envrolled.json` exists and the new file does not, its runs are carried over (the old
+file is left for you to delete). The server does not need this file.
 
 Decoy values are deliberately not shaped like real vendor secrets (no AWS, OpenAI, GitHub, Stripe, Google or JWT
 formats, and never 32 or 40 hex characters), so they cannot trigger push protection or vendor auto-revocation.
@@ -77,8 +82,7 @@ The URL values do contain your trap's hostname, so a reader can see where they p
 `init` refuses any output name matching `.env` or `.env.*` (compared case-insensitively, so `.ENV`, `.env.prod`,
 `.env.example` and `.env.local` are all blocked), unless the name ends in `.bak` or `.decoy`
 (like the default `.env.production.bak`). Names that do not start with `.env` are fine.
-Running `init` again keeps earlier token lists: `.envrolled.json` holds a `runs` array, one entry per run. A corrupt
-state file is never overwritten without `--force`.
+The default output name `.env.production.bak` is kept on purpose: it is a believable leftover backup name and passes the guard above.
 
 ## Configuration
 
@@ -94,13 +98,20 @@ The config file is `./envrolled.config.json` (or `--config <file>`), keys use th
 | `log` / `--log` | `ENVROLLED_LOG` | none | JSONL hit log file |
 | `trustProxy` / `--trust-proxy` | `ENVROLLED_TRUST_PROXY` | `false` | Read client IP from `CF-Connecting-IP` / `X-Forwarded-For` |
 | `stats` / `--stats` | `ENVROLLED_STATS` | `false` | Enable `GET /stats` |
+| `statsPort` / `--stats-port` | `ENVROLLED_STATS_PORT` | none | Serve `/stats` on a separate port |
 | `prefix` / `--prefix` | `ENVROLLED_PREFIX` | none | Also recognise tokens with this prefix |
 
 Every request except `/healthz` (and `/stats` when enabled) is logged as one JSON line:
 `{"time","ip","method","path","userAgent","token"}`, then answered with `302`. `GET /healthz` returns `ok`.
 Requests that exceed Node's header size limit get a `431` from Node itself and are not logged.
-`GET /stats` returns `{"total":N,"today":N}`: counts only, no IPs, handy for a public "bots rickrolled" counter.
+`GET /stats` returns `{"total":N,"today":N}`: counts only, no IPs. Because it lives on the same host as the trap, a visitor can discover it and learn it is a trap: **enable it only behind a separate admin host or port**. `--stats-port <n>` serves `/stats` on its own listener (same `--host`, so bind it to a private address) and disables it on the trap port.
 Counters are rebuilt from the log file on start.
+
+### Hostname warning
+
+Your trap's hostname ends up inside the decoy file. A `*.workers.dev` host, or any host containing the tool
+name, tells a reader what the file is. Use a believable custom domain (for example `api.yourcompany.dev`).
+Do the same for the Worker: `deploy/wrangler.toml` uses a generic example name, change it.
 
 ## Notifications
 

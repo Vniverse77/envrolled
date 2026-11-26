@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runInit, buildDecoy } from '../src/init.js';
+import { runInit, buildDecoy, defaultStateFile } from '../src/init.js';
 import { findToken, makeToken } from '../src/token.js';
 
 const dir = () => mkdtempSync(join(tmpdir(), 'envr-'));
@@ -13,8 +13,8 @@ test('init writes KEY=value lines pointing at the trap', () => {
   const out = join(d, '.env.production.bak');
   const r = runInit({ trap: 'https://trap.example.com/', out, stateFile: join(d, 's.json') });
   const text = readFileSync(out, 'utf8');
-  assert.match(text, /^API_BASE_URL=https:\/\/trap\.example\.com\/t\/[0-9a-f]{24}$/m);
-  assert.equal(Object.keys(r.tokens).length, 8);
+  assert.match(text, /^[A-Z_]+_(URL|ENDPOINT)=https:\/\/trap\.example\.com(\/[a-z0-9]+)+\/[0-9a-f]{24}$/m);
+  assert.ok(Object.keys(r.tokens).length >= 7 && Object.keys(r.tokens).length <= 9);
   assert.ok(existsSync(join(d, 's.json')));
 });
 
@@ -29,7 +29,7 @@ test('decoys never look like vendor secrets (50 files)', () => {
 test('default decoy output has no tool name and no honesty marker', () => {
   const { text } = buildDecoy({ trap: 'https://trap.example.com' });
   assert.doesNotMatch(text, /envr|decoy|honeytoken/i);
-  assert.match(text, /^# Production environment backup/);
+  assert.match(text.split('\n')[0], /^# /);
 });
 
 test('--label adds a neutral comment', () => {
@@ -75,8 +75,11 @@ test('token recognition', () => {
   const p = makeToken('zz_');
   assert.match(p, /^zz_[0-9a-f]{24}$/);
   assert.equal(findToken({ url: '/x', headers: [`Bearer ${p}`], prefix: 'zz_' }), p);
-  assert.equal(findToken({ url: '/t/anything-opaque_1' }), 'anything-opaque_1');
-  assert.throws(() => makeToken('AKIA'), /vendor/);
+  assert.equal(findToken({ url: '/t/zzzzzzzz' }), null);
+  assert.equal(findToken({ url: `/admin/session/${t}` }), t);
+  assert.equal(findToken({ url: `/a/b/zz_${t}/c`, prefix: 'zz_' }), `zz_${t}`);
+  assert.equal(findToken({ url: '/t/envr_0123' }), null);
+  for (const bad of ['AKIA', 'ya29.', 'hf_', 'gsk_', 'shpat_', 'dop_', 'sq0', 'key-', 'sk-']) assert.throws(() => makeToken(bad), /vendor|--prefix/, bad);
   assert.throws(() => makeToken('bad prefix'), /--prefix/);
 });
 
@@ -114,4 +117,54 @@ test('real-env guard is case-insensitive and covers .env.*', () => {
 
 test('field-specific error for bad --trap', () => {
   assert.throws(() => buildDecoy({ trap: 'notaurl' }), /Invalid --trap URL/);
+});
+
+test('URL paths are varied, end in the token, and --path forces one prefix', () => {
+  const seen = new Set();
+  for (let i = 0; i < 20; i++) {
+    const { urls } = buildDecoy({ trap: 'https://t.example', count: 12 });
+    for (const u of Object.values(urls)) {
+      assert.match(u, /^https:\/\/t\.example\/[a-z0-9\/]+\/[0-9a-f]{24}$/);
+      seen.add(u.replace(/\/[0-9a-f]{24}$/, ''));
+    }
+  }
+  assert.ok(seen.size >= 6, `only ${seen.size} distinct paths`);
+  const { urls } = buildDecoy({ trap: 'https://t.example', path: 'v9/', count: 10 });
+  for (const u of Object.values(urls)) assert.match(u, /^https:\/\/t\.example\/v9\/[0-9a-f]{24}$/);
+  assert.throws(() => buildDecoy({ trap: 'https://t.example', path: '../x' }), /--path/);
+});
+
+test('no two default runs share a layout; plain lines mixed in', () => {
+  const layouts = new Set();
+  for (let i = 0; i < 15; i++) {
+    const { text } = buildDecoy({ trap: 'https://t.example' });
+    assert.match(text, /^(NODE_ENV|PORT|LOG_LEVEL|APP_NAME|TZ|WORKERS)=/m);
+    assert.doesNotMatch(text, /DATABASE_URL|PRIVATE KEY/);
+    layouts.add(text.replace(/[0-9a-f]{24}/g, 'T'));
+  }
+  assert.equal(layouts.size, 15);
+});
+
+test('--count controls decoy variable count', () => {
+  const { tokens } = buildDecoy({ trap: 'https://t.example', count: 5 });
+  assert.equal(Object.keys(tokens).length, 5);
+});
+
+test('state file: default outside project (XDG / Windows), --state honoured, legacy migrated', () => {
+  assert.equal(defaultStateFile({ XDG_STATE_HOME: '/x/state' }, 'linux', '/h'), '/x/state/envrolled/state.json');
+  assert.equal(defaultStateFile({}, 'linux', '/h'), '/h/.local/state/envrolled/state.json');
+  assert.match(defaultStateFile({ LOCALAPPDATA: '/L' }, 'win32', '/h'), /L.envrolled.state\.json$/);
+  const d = dir();
+  const legacy = join(d, '.envrolled.json');
+  writeFileSync(legacy, JSON.stringify({ created: 'x', trap: 'https://old', file: 'o', tokens: { A: 'old' } }));
+  const st = join(d, 'sub', 'state.json');
+  const r = runInit({ trap: 'https://t.example', out: join(d, 'a.bak'), stateFile: st, legacyFile: legacy });
+  assert.equal(r.stateFile, st);
+  assert.equal(r.migratedFrom, legacy);
+  const runs = JSON.parse(readFileSync(st, 'utf8')).runs;
+  assert.equal(runs.length, 2);
+  assert.equal(runs[0].tokens.A, 'old');
+  assert.ok(runs[1].urls);
+  assert.ok(existsSync(legacy)); // old file left in place
+  assert.ok(!existsSync(join(d, '.envrolled.json.new')));
 });

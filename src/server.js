@@ -24,7 +24,7 @@ const today = (d = new Date()) => d.toISOString().slice(0, 10);
 
 export function createTrap(opts) {
   const redirect = validateRedirect(opts.redirect); // fixed at startup
-  const { prefix = '', log = null, trustProxy = false, stats = false, onError = () => {}, now = () => new Date() } = opts;
+  const { prefix = '', log = null, trustProxy = false, stats = false, statsPort = null, onError = () => {}, now = () => new Date() } = opts;
   const notify = createNotifier({ url: opts.notify, fetchImpl: opts.fetchImpl, onError });
   const counts = { total: 0, byDay: {} };
 
@@ -47,6 +47,20 @@ export function createTrap(opts) {
     }
   }
 
+  const sendStats = (res) => {
+    const body = { total: counts.total, today: counts.byDay[today(now())] || 0 }; // counts only, no IPs
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body) + '\n');
+  };
+  // Optional admin listener: only /stats (and /healthz). Bind it to a private host/port.
+  const statsServer = statsPort
+    ? httpServer((req, res) => {
+        const path = (req.url || '/').split('?')[0];
+        if (path === '/stats') return sendStats(res);
+        if (path === '/healthz') return res.writeHead(200).end('ok\n');
+        res.writeHead(404).end();
+      })
+    : null;
+
   const server = httpServer((req, res) => {
     const path = (req.url || '/').split('?')[0];
 
@@ -54,11 +68,8 @@ export function createTrap(opts) {
       res.writeHead(200, { 'content-type': 'text/plain' }).end('ok\n');
       return;
     }
-    if (stats && path === '/stats') {
-      const body = { total: counts.total, today: counts.byDay[today(now())] || 0 }; // counts only, no IPs
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body) + '\n');
-      return;
-    }
+    // With a separate stats port, /stats is NOT served on the public trap port.
+    if (stats && !statsPort && path === '/stats') return sendStats(res);
 
     const h = req.headers;
     const hit = {
@@ -74,8 +85,8 @@ export function createTrap(opts) {
     if (log) appendFile(log, JSON.stringify(hit) + '\n', (e) => e && onError(e));
     notify(hit);
 
-    res.writeHead(302, { location: redirect, 'cache-control': 'no-store' }).end();
+    res.writeHead(302, { location: redirect, 'cache-control': 'no-store', 'content-length': 0 }).end();
   });
   server.requestTimeout = 10_000;
-  return { server, counts, redirect };
+  return { server, statsServer, counts, redirect };
 }

@@ -7,8 +7,7 @@
 import { randomBytes } from 'node:crypto';
 
 const HEX24 = /(?<![0-9a-f])[0-9a-f]{24}(?![0-9a-f])/;
-const PATH_TOKEN = /^\/t\/([A-Za-z0-9_-]{8,80})/;
-const VENDOR_PREFIX = /^(a[ks]ia|sk|ghp|gho|ghs|ghu|github|xox|aiza|eyj|pk|rk|whsec|npm|glpat)/i;
+const VENDOR_PREFIX = /^(a[ks]ia|sk|ghp|gho|ghs|ghu|github|xox|aiza|eyj|pk|rk|whsec|npm|glpat|ya29|hf_|gsk_|shpat|dop_|sq0|key-)/i;
 
 export function validatePrefix(prefix) {
   if (prefix === undefined || prefix === null || prefix === '') return '';
@@ -23,16 +22,19 @@ export function makeToken(prefix = '') {
 }
 
 /**
- * Recognise a decoy token. `url` is the request URL (path + query); the other
- * parts are header values. Order: /t/<token> path shape, then prefix+hex24,
- * then plain hex24.
+ * Recognise a decoy token: a valid 24-hex (or prefix + 24-hex) value, either as a
+ * whole path segment anywhere in the path, or inside the query / header values.
+ * Noise such as /t/zzzzzzzz yields null. `url` is path + query.
  */
 export function findToken({ url, headers = [], prefix = '' } = {}) {
-  const m = PATH_TOKEN.exec(String(url || '').split('?')[0]);
-  if (m) return m[1];
   const p = prefix ? validatePrefix(prefix) : '';
   const custom = p ? new RegExp(`${p}[0-9a-f]{24}(?![0-9a-f])`) : null;
-  for (const s of [url, ...headers]) {
+  const segOk = new RegExp(`^(?:${p ? p + '|' : ''})[0-9a-f]{24}$`);
+  const u = String(url || '');
+  for (const seg of u.split('?')[0].split('/')) {
+    if (segOk.test(seg)) return seg;
+  }
+  for (const s of [u, ...headers]) {
     if (typeof s !== 'string') continue;
     const c = custom?.exec(s);
     if (c) return c[0];

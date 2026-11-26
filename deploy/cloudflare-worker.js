@@ -11,11 +11,8 @@
 
 const DEFAULT_REDIRECT = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 const HEX24 = /(?<![0-9a-f])[0-9a-f]{24}(?![0-9a-f])/;
-const PATH_TOKEN = /^\/t\/([A-Za-z0-9_-]{8,80})/;
-// Same recognition as the CLI: /t/<token> path shape, optional TOKEN_PREFIX env var, plain 24 hex.
+// Same recognition as the CLI: a 24-hex (or TOKEN_PREFIX + 24-hex) value anywhere in the path, query or headers.
 function findToken(url, headers, prefix) {
-  const m = PATH_TOKEN.exec(url.pathname);
-  if (m) return m[1];
   const custom = /^[A-Za-z0-9_-]{1,16}$/.test(prefix || '') ? new RegExp(`${prefix}[0-9a-f]{24}(?![0-9a-f])`) : null;
   for (const s of [url.pathname + url.search, ...headers]) {
     if (!s) continue;

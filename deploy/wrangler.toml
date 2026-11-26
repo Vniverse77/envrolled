@@ -1,5 +1,5 @@
 # Example only. Copy next to cloudflare-worker.js, then: npx wrangler deploy
-name = "envrolled-trap"
+name = "my-redirect"
 main = "cloudflare-worker.js"
 compatibility_date = "2025-01-01"
 
